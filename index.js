@@ -9,7 +9,15 @@ const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 const app = express();
 const port = process.env.PORT ;
 const mongoURI = process.env.MONGO_URI; 
+const { SESClient, SendEmailCommand } = require("@aws-sdk/client-ses");
 
+const sesClient = new SESClient({
+  region: "us-east-2", // 
+  Credentials: {
+    accessKeyId: "AKIA4ERMGBREBG2FS3WC",
+    secretAccessKey : "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 "
+  },
+});
 mongoose.connect(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -106,33 +114,62 @@ app.post('/login', async (req, res) => {
     }
   });
 
-  app.post('/upload', async (req, res) => {
-    try {
-      const { emails } = req.body;
-  
-      if (!Array.isArray(emails) || emails.length !== 5) {
-        return res.status(400).json({ error: 'Invalid email list' });
-      }
-  
-      const file = req.files.file;
-  
-      // Upload file to S3 bucket
-      const params = {
-        Bucket: 'aws-1-userfiles',
-        Key: file.name,
-        Body: file.data,
-      };
-  
-      const uploadResult = await s3.upload(params).promise();
-  
-      // You can now send emails using the 'emails' array
-  
-      res.status(200).json({ message: 'File uploaded successfully', fileUrl: uploadResult.Location });
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      res.status(500).json({ error: 'An error occurred while uploading the file' });
-    }
-  });
+// Upload route
+app.post('/upload', async (req, res) => {
+  try {
+    const { emails } = req.body;
+    // console.log(req);
+
+    // if (!Array.isArray(emails) || emails.length !== 1) {
+    //   return res.status(400).json({ error: 'Invalid email list' });
+    // }
+
+    const recipientEmail = emails[0];
+    const file = req.files.file;
+
+    console.log(file);
+
+    // Upload file to S3 bucket
+    const params = {
+      Bucket: 'aws-1-userfiles',
+      Key: file.name,
+      Body: file.data,
+    };
+
+    const uploadResult = await client.upload(params).promise();
+
+    // Create a link to the uploaded file
+    const fileUrl = uploadResult.Location;
+
+    // Send email notification using AWS SES
+    const sendEmailParams = {
+      Destination: {
+        ToAddresses: [recipientEmail],
+      },
+      Message: {
+        Body: {
+          Html: {
+            Charset: 'UTF-8',
+            Data: `<p>File uploaded successfully!</p><p>Download link: <a href="${fileUrl}">${fileUrl}</a></p>`,
+          },
+        },
+        Subject: {
+          Charset: 'UTF-8',
+          Data: 'File Upload Notification',
+        },
+      },
+      Source: 'muhammadalimandela01@gmail.com', // Replace with sender email address
+    };
+
+    await sesClient.send(new SendEmailCommand(sendEmailParams));
+
+    res.status(200).json({ message: 'File uploaded successfully', fileUrl });
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    res.status(500).json({ error: 'An error occurred while uploading the file' });
+  }
+});
+
   
 
 app.listen(port, () => {
